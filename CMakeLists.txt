@@ -28,6 +28,12 @@ include(CTest)
 
 include(GNUInstallDirs)
 
+# ── Controller dependencies (KDL, URDF, Eigen) ───────────────────────────────
+find_package(orocos_kdl REQUIRED)
+find_package(kdl_parser REQUIRED)
+find_package(urdfdom REQUIRED)
+find_package(Eigen3 REQUIRED NO_MODULE)
+
 # Create the main library
 add_library(
   openarm_can
@@ -39,7 +45,9 @@ add_library(
   src/openarm/damiao_motor/dm_motor.cpp
   src/openarm/damiao_motor/dm_motor_control.cpp
   src/openarm/damiao_motor/dm_motor_device.cpp
-  src/openarm/damiao_motor/dm_motor_device_collection.cpp)
+  src/openarm/damiao_motor/dm_motor_device_collection.cpp
+  src/openarm/controller/dynamics.cpp
+  src/openarm/controller/openarm_controller.cpp)
 set_target_properties(
   openarm_can
   PROPERTIES POSITION_INDEPENDENT_CODE ON
@@ -65,7 +73,9 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.23)
            include/openarm/damiao_motor/dm_motor_constants.hpp
            include/openarm/damiao_motor/dm_motor_control.hpp
            include/openarm/damiao_motor/dm_motor_device.hpp
-           include/openarm/damiao_motor/dm_motor_device_collection.hpp)
+           include/openarm/damiao_motor/dm_motor_device_collection.hpp
+           include/openarm/controller/dynamics.hpp
+           include/openarm/controller/openarm_controller.hpp)
   install(
     TARGETS openarm_can
     EXPORT openarm_can_export
@@ -77,6 +87,13 @@ else()
   install(TARGETS openarm_can EXPORT openarm_can_export)
   install(DIRECTORY include/openarm TYPE INCLUDE)
 endif()
+
+target_link_libraries(
+  openarm_can
+  PUBLIC orocos-kdl
+         kdl_parser
+         urdfdom_model
+         Eigen3::Eigen)
 
 # CMake package
 set(INSTALL_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/OpenArmCAN)
