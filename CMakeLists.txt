@@ -47,7 +47,8 @@ add_library(
   src/openarm/damiao_motor/dm_motor_device.cpp
   src/openarm/damiao_motor/dm_motor_device_collection.cpp
   src/openarm/controller/dynamics.cpp
-  src/openarm/controller/openarm_controller.cpp)
+  src/openarm/controller/openarm_controller.cpp
+  src/openarm/controller/dual_openarm_controller.cpp)
 set_target_properties(
   openarm_can
   PROPERTIES POSITION_INDEPENDENT_CODE ON
@@ -75,7 +76,8 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.23)
            include/openarm/damiao_motor/dm_motor_device.hpp
            include/openarm/damiao_motor/dm_motor_device_collection.hpp
            include/openarm/controller/dynamics.hpp
-           include/openarm/controller/openarm_controller.hpp)
+           include/openarm/controller/openarm_controller.hpp
+           include/openarm/controller/dual_openarm_controller.hpp)
   install(
     TARGETS openarm_can
     EXPORT openarm_can_export

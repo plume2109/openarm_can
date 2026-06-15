@@ -117,13 +117,7 @@ openarm.enable_all();
 
 See [dev/README.md](dev/README.md) for how to build.
 
-### 4. Python (🚧 EXPERIMENTAL - TEMPORARY 🚧)
-
-> [!WARNING]
->
-> ⚠️ **WARNING: UNSTABLE API** ⚠️
-> Python bindings are currently a direct low level **temporary port**, and will change **DRASTICALLY**.
-> The interface may break between versions. Use at your own risk! Discussions on the interface are welcome.
+### 4. Python
 
 **Build & Install:**
 
@@ -139,16 +133,59 @@ source venv/bin/activate
 pip install .
 ```
 
-**Usage:**
+**Single-arm usage:**
 
 ```python
-# WARNING: This API is unstable and will change!
 import openarm_can as oa
 
-arm = oa.OpenArm("can0", True)  # CAN-FD enabled
-arm.init_arm_motors([oa.MotorType.DM4310], [0x01], [0x11])
-arm.enable_all()
+ctrl = oa.OpenArmController("can0", "/path/to/openarm.urdf",
+                             "openarm_body_link0", "openarm_right_hand")
+ctrl.enable()
+
+# Read joint state (positions, velocities, torques, gripper)
+state = ctrl.get_joint_state()
+print(state.positions)        # list[float] × 7, rad
+print(state.gripper_position) # float, rad
+
+# Send a joint-space command
+ctrl.send_joint_action(positions, gripper_position=0.0)
+
+# Gravity compensation — arm floats, can be hand-guided
+ctrl.enable_gravity_compensation()
+# ... record state.positions in your own loop ...
+ctrl.disable_gravity_compensation()
+
+ctrl.disable()
 ```
+
+**Dual-arm usage:**
+
+```python
+import openarm_can as oa
+
+ctrl = oa.DualOpenArmController("can0", "can1", "/path/to/openarm.urdf",
+                                 "openarm_body_link0", "openarm_right_hand")
+ctrl.enable()
+
+# Read — positions[0..6] = left arm, positions[7..13] = right arm
+state = ctrl.get_joint_state()
+print(state.positions)              # list[float] × 14, rad
+print(state.gripper_left_position)  # float, rad
+print(state.gripper_right_position) # float, rad
+
+# Send a joint-space command to both arms simultaneously
+ctrl.send_joint_action(positions_14,
+                       gripper_left_position=0.0,
+                       gripper_right_position=0.0)
+
+# Gravity compensation on both arms simultaneously
+ctrl.enable_gravity_compensation()
+ctrl.disable_gravity_compensation()
+
+ctrl.disable()
+```
+
+Both arms are driven from a single IO thread (~1 kHz), so CAN frames to `can0` and `can1` are issued in the same loop iteration.
 
 ### Examples
 

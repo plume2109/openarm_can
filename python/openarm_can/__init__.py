@@ -48,6 +48,12 @@ __all__ = [
     "MotorDeviceCan",      # Motor device management
     "CANDeviceCollection",  # Device collection management
 
+    # High-level controllers
+    "ArmState",
+    "OpenArmController",
+    "DualArmState",
+    "DualOpenArmController",
+
     # Exceptions
     "CANSocketException",
 ]

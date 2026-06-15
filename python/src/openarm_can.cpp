@@ -18,6 +18,7 @@
 #include <nanobind/stl/vector.h>
 
 #include <openarm/controller/openarm_controller.hpp>
+#include <openarm/controller/dual_openarm_controller.hpp>
 
 using namespace openarm::controller;
 
@@ -59,4 +60,44 @@ NB_MODULE(openarm_can, m) {
              nb::arg("gripper_position") = 0.0)
         .def("disable_gravity_compensation",
              &OpenArmController::disable_gravity_compensation);
+
+    // ── DualArmState ──────────────────────────────────────────────────────────
+    nb::class_<DualArmState>(m, "DualArmState")
+        .def(nb::init<>())
+        .def_rw("positions",             &DualArmState::positions)
+        .def_rw("velocities",            &DualArmState::velocities)
+        .def_rw("torques",               &DualArmState::torques)
+        .def_rw("gripper_left_position", &DualArmState::gripper_left_position)
+        .def_rw("gripper_left_torque",   &DualArmState::gripper_left_torque)
+        .def_rw("gripper_right_position",&DualArmState::gripper_right_position)
+        .def_rw("gripper_right_torque",  &DualArmState::gripper_right_torque);
+
+    // ── DualOpenArmController ─────────────────────────────────────────────────
+    nb::class_<DualOpenArmController>(m, "DualOpenArmController")
+        .def(nb::init<const std::string&, const std::string&,
+                      const std::string&, const std::string&,
+                      const std::string&>(),
+             nb::arg("left_can"),
+             nb::arg("right_can"),
+             nb::arg("urdf_path"),
+             nb::arg("root_link"),
+             nb::arg("tip_link"))
+        // Lifecycle
+        .def("enable",  &DualOpenArmController::enable)
+        .def("disable", &DualOpenArmController::disable)
+        // Read
+        .def("get_joint_state", &DualOpenArmController::get_joint_state)
+        // Write — positions[0..6] = left, positions[7..13] = right
+        .def("send_joint_action",
+             &DualOpenArmController::send_joint_action,
+             nb::arg("positions"),
+             nb::arg("gripper_left_position")  = 0.0,
+             nb::arg("gripper_right_position") = 0.0)
+        // Gravity compensation mode
+        .def("enable_gravity_compensation",
+             &DualOpenArmController::enable_gravity_compensation,
+             nb::arg("gripper_left_position")  = 0.0,
+             nb::arg("gripper_right_position") = 0.0)
+        .def("disable_gravity_compensation",
+             &DualOpenArmController::disable_gravity_compensation);
 }
