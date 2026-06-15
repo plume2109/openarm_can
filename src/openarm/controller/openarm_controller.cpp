@@ -33,6 +33,15 @@ static const std::vector<damiao_motor::MotorType> ARM_MOTOR_TYPES = {
 };
 static const std::vector<uint32_t> ARM_SEND_IDS = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
 static const std::vector<uint32_t> ARM_RECV_IDS = {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
+static const std::vector<damiao_motor::ControlMode> ARM_CONTROL_MODES = {
+    damiao_motor::ControlMode::MIT,  // joint 0 – shoulder pitch
+    damiao_motor::ControlMode::MIT,  // joint 1 – shoulder roll
+    damiao_motor::ControlMode::MIT,  // joint 2 – shoulder yaw
+    damiao_motor::ControlMode::MIT,  // joint 3 – elbow flex
+    damiao_motor::ControlMode::MIT,  // joint 4 – wrist 1
+    damiao_motor::ControlMode::MIT,  // joint 5 – wrist 2
+    damiao_motor::ControlMode::MIT,  // joint 6 – wrist 3
+};
 
 static constexpr damiao_motor::MotorType GRIPPER_MOTOR_TYPE = damiao_motor::MotorType::DM4310;
 static constexpr uint32_t               GRIPPER_SEND_ID     = 0x08;
@@ -43,10 +52,20 @@ static constexpr uint32_t               GRIPPER_RECV_ID     = 0x18;
 OpenArmController::OpenArmController(const std::string& can_interface,
                                      const std::string& urdf_path,
                                      const std::string& root_link,
-                                     const std::string& tip_link) {
+                                     const std::string& tip_link,
+                                     std::array<double, 7> kp,
+                                     std::array<double, 7> kd,
+                                     std::array<double, 7> grav_kd,
+                                     double               grav_tau_scale,
+                                     double               gripper_max_speed,
+                                     double               gripper_torque_pu)
+    : KPS_(kp), KDS_(kd), GRAV_KD_(grav_kd),
+      GRAV_TAU_SCALE_(grav_tau_scale),
+      GRIPPER_MAX_SPEED_(gripper_max_speed),
+      GRIPPER_TORQUE_PU_(gripper_torque_pu) {
     // Hardware (CAN-FD enabled)
     hw_ = std::make_unique<can::socket::OpenArm>(can_interface, true);
-    hw_->init_arm_motors(ARM_MOTOR_TYPES, ARM_SEND_IDS, ARM_RECV_IDS);
+    hw_->init_arm_motors(ARM_MOTOR_TYPES, ARM_SEND_IDS, ARM_RECV_IDS, ARM_CONTROL_MODES);
     hw_->init_gripper_motor(GRIPPER_MOTOR_TYPE, GRIPPER_SEND_ID, GRIPPER_RECV_ID,
                             damiao_motor::ControlMode::POS_FORCE);
     hw_->set_callback_mode_all(damiao_motor::CallbackMode::STATE);
@@ -151,6 +170,7 @@ void OpenArmController::io_loop() {
         // Gravity compensation: runs entirely in this thread when active
         if (gravity_comp_active_) {
             dynamics_->GetGravity(state.positions.data(), gravity.data());
+            for (auto& t : gravity) t *= GRAV_TAU_SCALE_;
             apply_mit(state.positions, {}, GRAV_KD_, gravity,
                       gravity_comp_gripper_pos_.load());
         }

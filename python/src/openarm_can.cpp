@@ -39,11 +39,19 @@ NB_MODULE(openarm_can, m) {
     // ── OpenArmController ─────────────────────────────────────────────────────
     nb::class_<OpenArmController>(m, "OpenArmController")
         .def(nb::init<const std::string&, const std::string&,
-                      const std::string&, const std::string&>(),
+                      const std::string&, const std::string&,
+                      std::array<double, 7>, std::array<double, 7>, std::array<double, 7>,
+                      double, double, double>(),
              nb::arg("can_interface"),
              nb::arg("urdf_path"),
              nb::arg("root_link"),
-             nb::arg("tip_link"))
+             nb::arg("tip_link"),
+             nb::arg("kp")               = std::array<double, 7>{300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0},
+             nb::arg("kd")               = std::array<double, 7>{2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8},
+             nb::arg("grav_kd")          = std::array<double, 7>{0.1,   0.1,   0.1,   0.1,   0.1,  0.1,  0.1},
+             nb::arg("grav_tau_scale")   = 1.0,
+             nb::arg("gripper_max_speed") = 10.0,
+             nb::arg("gripper_torque_pu") = 0.25)
         // Lifecycle
         .def("enable",  &OpenArmController::enable)
         .def("disable", &OpenArmController::disable)
@@ -75,13 +83,20 @@ NB_MODULE(openarm_can, m) {
     // ── DualOpenArmController ─────────────────────────────────────────────────
     nb::class_<DualOpenArmController>(m, "DualOpenArmController")
         .def(nb::init<const std::string&, const std::string&,
-                      const std::string&, const std::string&,
-                      const std::string&>(),
+                      const std::string&, const std::string&, const std::string&,
+                      std::array<double, 7>, std::array<double, 7>, std::array<double, 7>,
+                      double, double, double>(),
              nb::arg("left_can"),
              nb::arg("right_can"),
              nb::arg("urdf_path"),
              nb::arg("root_link"),
-             nb::arg("tip_link"))
+             nb::arg("tip_link"),
+             nb::arg("kp")                = std::array<double, 7>{300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0},
+             nb::arg("kd")                = std::array<double, 7>{2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8},
+             nb::arg("grav_kd")           = std::array<double, 7>{0.1,   0.1,   0.1,   0.1,   0.1,  0.1,  0.1},
+             nb::arg("grav_tau_scale")    = 1.0,
+             nb::arg("gripper_max_speed") = 10.0,
+             nb::arg("gripper_torque_pu") = 0.25)
         // Lifecycle
         .def("enable",  &DualOpenArmController::enable)
         .def("disable", &DualOpenArmController::disable)

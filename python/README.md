@@ -18,8 +18,19 @@ pip install .
 ```python
 import openarm_can as oa
 
+# Default gains
 ctrl = oa.OpenArmController("can0", "/path/to/openarm.urdf",
                              "openarm_body_link0", "openarm_right_hand")
+
+# Custom gains (optional) — tunable without recompiling
+ctrl = oa.OpenArmController("can0", "/path/to/openarm.urdf",
+                             "openarm_body_link0", "openarm_right_hand",
+                             kp               = [300, 300, 150, 150, 40, 40, 30],   # position stiffness
+                             kd               = [2.5, 2.5, 2.5, 2.5, 0.8, 0.8, 0.8],  # velocity damping
+                             grav_kd          = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],  # gravity comp damping
+                             grav_tau_scale   = 1.0,   # scale computed gravity torques (1.0 = full compensation)
+                             gripper_max_speed = 10.0,  # rad/s
+                             gripper_torque_pu = 0.25)  # gripper force limit [0–1]
 ctrl.enable()
 
 state = ctrl.get_joint_state()
@@ -42,8 +53,19 @@ ctrl.disable()
 ```python
 import openarm_can as oa
 
+# Default gains
 ctrl = oa.DualOpenArmController("can0", "can1", "/path/to/openarm.urdf",
                                  "openarm_body_link0", "openarm_right_hand")
+
+# Custom gains (optional)
+ctrl = oa.DualOpenArmController("can0", "can1", "/path/to/openarm.urdf",
+                                 "openarm_body_link0", "openarm_right_hand",
+                                 kp               = [300, 300, 150, 150, 40, 40, 30],
+                                 kd               = [2.5, 2.5, 2.5, 2.5, 0.8, 0.8, 0.8],
+                                 grav_kd          = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+                                 grav_tau_scale   = 1.0,
+                                 gripper_max_speed = 10.0,
+                                 gripper_torque_pu = 0.25)
 ctrl.enable()
 
 state = ctrl.get_joint_state()

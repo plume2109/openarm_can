@@ -46,7 +46,13 @@ public:
     // root_link     : root link name in the URDF, e.g. "openarm_body_link0"
     // tip_link      : tip link name in the URDF, e.g. "openarm_right_hand"
     OpenArmController(const std::string& can_interface, const std::string& urdf_path,
-                      const std::string& root_link, const std::string& tip_link);
+                      const std::string& root_link, const std::string& tip_link,
+                      std::array<double, 7> kp            = {300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0},
+                      std::array<double, 7> kd            = {2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8},
+                      std::array<double, 7> grav_kd       = {0.1,   0.1,   0.1,   0.1,   0.1,  0.1,  0.1},
+                      double               grav_tau_scale = 1.0,
+                      double               gripper_max_speed  = 10.0,
+                      double               gripper_torque_pu  = 0.25);
     ~OpenArmController();
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -87,16 +93,13 @@ private:
     std::atomic<bool>   gravity_comp_active_{false};
     std::atomic<double> gravity_comp_gripper_pos_{0.0};
 
-    // ── MIT gains (position control) ──────────────────────────────────────────
-    static constexpr std::array<double, 7> KPS_ = {300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0};
-    static constexpr std::array<double, 7> KDS_ = {2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8};
-
-    // ── MIT gains (gravity compensation) ─────────────────────────────────────
-    static constexpr std::array<double, 7> GRAV_KD_ = {0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1};
-
-    // ── Gripper POS_FORCE limits ──────────────────────────────────────────────
-    static constexpr double GRIPPER_MAX_SPEED_ = 10.0;   // rad/s
-    static constexpr double GRIPPER_TORQUE_PU_ = 0.25;   // per-unit [0–1]
+    // ── MIT gains + gripper limits (set at construction, tunable from Python) ──
+    std::array<double, 7> KPS_;
+    std::array<double, 7> KDS_;
+    std::array<double, 7> GRAV_KD_;
+    double                GRAV_TAU_SCALE_;    // multiplier on computed gravity torques
+    double                GRIPPER_MAX_SPEED_; // rad/s
+    double                GRIPPER_TORQUE_PU_; // per-unit [0–1]
 
     // ── CAN receive timeout ───────────────────────────────────────────────────
     static constexpr int IO_RECV_TIMEOUT_US_ = 500;
