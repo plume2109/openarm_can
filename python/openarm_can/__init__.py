@@ -51,8 +51,8 @@ __all__ = [
     # High-level controllers
     "ArmState",
     "OpenArmController",
-    "DualArmState",
-    "DualOpenArmController",
+    # "DualArmState",
+    # "DualOpenArmController",
 
     # Exceptions
     "CANSocketException",

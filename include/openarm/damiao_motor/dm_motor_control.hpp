@@ -61,6 +61,15 @@ struct PosVelParam {
     double dq;
 };
 
+struct PIDParam {
+    double kp;
+    double kd;
+    double ki;  // Integral gain (default 0.2)
+    double q;         // Desired position (rad)
+    double dq;        // Desired velocity (rad/s)
+    double tau;       // Feedforward torque (Nm), integral term is added on top
+};
+
 struct PosForceParam {
     double q;   // Position command in rad.
     double dq;  // Absolute speed limit in rad/s, scaled by 100 into uint16 when packed.

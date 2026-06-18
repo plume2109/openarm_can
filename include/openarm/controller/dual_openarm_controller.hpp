@@ -55,6 +55,7 @@ public:
                           const std::string& tip_link,
                           std::array<double, 7> kp               = {300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0},
                           std::array<double, 7> kd               = {2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8},
+                          std::array<double, 7> ki               = {0.2,   0.2,   0.2,   0.2,   0.2,  0.2,  0.2},
                           std::array<double, 7> grav_kd          = {0.1,   0.1,   0.1,   0.1,   0.1,  0.1,  0.1},
                           double               grav_tau_scale    = 1.0,
                           double               gripper_max_speed = 10.0,
@@ -76,6 +77,17 @@ public:
                            double gripper_left_position  = 0.0,
                            double gripper_right_position = 0.0);
 
+    // Same as send_joint_action, but adds a host-side integral term plus
+    // gravity-torque feedforward (computed internally per-arm, not supplied
+    // by the caller) on top of the MIT command for each arm. See
+    // OpenArmController::send_joint_action_pid.
+    void send_joint_action_pid(const std::array<double, 14>& positions,
+                               double gain_scale = 1.0,
+                               double gripper_left_position  = 0.0,
+                               double gripper_right_position = 0.0);
+    // Clears the accumulated PID integral term on both arms.
+    void reset_integral();
+
     // ── Gravity compensation mode ─────────────────────────────────────────────
     // Both arms float simultaneously; call get_joint_state() to record.
     void enable_gravity_compensation(double gripper_left_position  = 0.0,
@@ -86,6 +98,10 @@ private:
     // ── Hardware ──────────────────────────────────────────────────────────────
     std::unique_ptr<can::socket::OpenArm> hw_left_;
     std::unique_ptr<can::socket::OpenArm> hw_right_;
+    // Serializes CAN access per arm between io_thread_ and the public API
+    // (see OpenArmController::hw_mutex_ for why this is needed).
+    mutable std::mutex hw_mutex_left_;
+    mutable std::mutex hw_mutex_right_;
 
     // ── Dynamics ──────────────────────────────────────────────────────────────
     std::unique_ptr<Dynamics> dynamics_left_;
@@ -106,6 +122,7 @@ private:
     // ── MIT gains + gripper limits (set at construction, tunable from Python) ──
     std::array<double, 7> KPS_;
     std::array<double, 7> KDS_;
+    std::array<double, 7> KIS_;
     std::array<double, 7> GRAV_KD_;
     double                GRAV_TAU_SCALE_;    // multiplier on computed gravity torques
     double                GRIPPER_MAX_SPEED_; // rad/s
@@ -116,12 +133,14 @@ private:
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void io_loop();
-    void apply_mit(can::socket::OpenArm& hw,
+    void apply_mit(can::socket::OpenArm& hw, std::mutex& hw_mutex,
                    const std::array<double, 7>& q_target,
                    const std::array<double, 7>& kp,
                    const std::array<double, 7>& kd,
                    const std::array<double, 7>& tau_ff,
                    double gripper_pos);
+    void apply_pid(can::socket::OpenArm& hw, std::mutex& hw_mutex, Dynamics& dynamics,
+                   const std::array<double, 7>& q_target, double gain_scale, double gripper_pos);
 };
 
 }  // namespace openarm::controller

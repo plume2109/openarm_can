@@ -37,7 +37,7 @@ bool Dynamics::Init() {
         return false;
     }
 
-    if (!kdl_parser::treeFromUrdfModel(*urdf_model_interface_, kdl_tree_)) {
+    if (!kdl_parser_compat::treeFromUrdfModel(*urdf_model_interface_, kdl_tree_)) {
         fprintf(stderr, "[Dynamics] Failed to extract KDL tree from URDF\n");
         return false;
     }

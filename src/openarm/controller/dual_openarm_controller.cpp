@@ -56,11 +56,12 @@ DualOpenArmController::DualOpenArmController(const std::string& left_can,
                                              const std::string& tip_link,
                                              std::array<double, 7> kp,
                                              std::array<double, 7> kd,
+                                             std::array<double, 7> ki,
                                              std::array<double, 7> grav_kd,
                                              double               grav_tau_scale,
                                              double               gripper_max_speed,
                                              double               gripper_torque_pu)
-    : KPS_(kp), KDS_(kd), GRAV_KD_(grav_kd),
+    : KPS_(kp), KDS_(kd), KIS_(ki), GRAV_KD_(grav_kd),
       GRAV_TAU_SCALE_(grav_tau_scale),
       GRIPPER_MAX_SPEED_(gripper_max_speed),
       GRIPPER_TORQUE_PU_(gripper_torque_pu) {
@@ -111,18 +112,34 @@ DualOpenArmController::~DualOpenArmController() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 void DualOpenArmController::enable() {
-    for (auto* hw : {hw_left_.get(), hw_right_.get()}) {
-        hw->set_callback_mode_all(damiao_motor::CallbackMode::STATE);
-        hw->enable_all();
-        hw->recv_all(2000);
+    {
+        std::lock_guard<std::mutex> lock(hw_mutex_left_);
+        hw_left_->set_callback_mode_all(damiao_motor::CallbackMode::STATE);
+        hw_left_->enable_all();
+        hw_left_->recv_all(2000);
+    }
+    {
+        std::lock_guard<std::mutex> lock(hw_mutex_right_);
+        hw_right_->set_callback_mode_all(damiao_motor::CallbackMode::STATE);
+        hw_right_->enable_all();
+        hw_right_->recv_all(2000);
     }
 }
 
 void DualOpenArmController::disable() {
+    // Stop io_thread_ from issuing further gravity-comp frames *before*
+    // taking the locks below, so disable_all() isn't immediately undone by
+    // a gravity-comp frame still queued behind the lock.
     gravity_comp_active_ = false;
-    for (auto* hw : {hw_left_.get(), hw_right_.get()}) {
-        hw->disable_all();
-        hw->recv_all(1000);
+    {
+        std::lock_guard<std::mutex> lock(hw_mutex_left_);
+        hw_left_->disable_all();
+        hw_left_->recv_all(1000);
+    }
+    {
+        std::lock_guard<std::mutex> lock(hw_mutex_right_);
+        hw_right_->disable_all();
+        hw_right_->recv_all(1000);
     }
 }
 
@@ -144,8 +161,32 @@ void DualOpenArmController::send_joint_action(const std::array<double, 14>& posi
         q_left[i]  = positions[i];
         q_right[i] = positions[i + 7];
     }
-    apply_mit(*hw_left_,  q_left,  KPS_, KDS_, zero, gripper_left_position);
-    apply_mit(*hw_right_, q_right, KPS_, KDS_, zero, gripper_right_position);
+    apply_mit(*hw_left_,  hw_mutex_left_,  q_left,  KPS_, KDS_, zero, gripper_left_position);
+    apply_mit(*hw_right_, hw_mutex_right_, q_right, KPS_, KDS_, zero, gripper_right_position);
+}
+
+void DualOpenArmController::send_joint_action_pid(const std::array<double, 14>& positions,
+                                                  double gain_scale,
+                                                  double gripper_left_position,
+                                                  double gripper_right_position) {
+    std::array<double, 7> q_left, q_right;
+    for (int i = 0; i < 7; ++i) {
+        q_left[i]  = positions[i];
+        q_right[i] = positions[i + 7];
+    }
+    apply_pid(*hw_left_,  hw_mutex_left_,  *dynamics_left_,  q_left,  gain_scale, gripper_left_position);
+    apply_pid(*hw_right_, hw_mutex_right_, *dynamics_right_, q_right, gain_scale, gripper_right_position);
+}
+
+void DualOpenArmController::reset_integral() {
+    {
+        std::lock_guard<std::mutex> lock(hw_mutex_left_);
+        hw_left_->get_arm().reset_integral_all();
+    }
+    {
+        std::lock_guard<std::mutex> lock(hw_mutex_right_);
+        hw_right_->get_arm().reset_integral_all();
+    }
 }
 
 // ── Gravity compensation mode ─────────────────────────────────────────────────
@@ -168,30 +209,37 @@ void DualOpenArmController::io_loop() {
     std::array<double, 7> grav_right = {};
 
     while (running_) {
-        // Refresh both buses
-        hw_left_->refresh_all();
-        hw_right_->refresh_all();
-        hw_left_->recv_all(IO_RECV_TIMEOUT_US_);
-        hw_right_->recv_all(IO_RECV_TIMEOUT_US_);
-
-        const auto left_motors    = hw_left_->get_arm().get_motors();
-        const auto left_gripper   = hw_left_->get_gripper().get_motors()[0];
-        const auto right_motors   = hw_right_->get_arm().get_motors();
-        const auto right_gripper  = hw_right_->get_gripper().get_motors()[0];
-
         DualArmState state;
-        for (int i = 0; i < 7; ++i) {
-            state.positions[i]      = left_motors[i].get_position();
-            state.velocities[i]     = left_motors[i].get_velocity();
-            state.torques[i]        = left_motors[i].get_torque();
-            state.positions[i + 7]  = right_motors[i].get_position();
-            state.velocities[i + 7] = right_motors[i].get_velocity();
-            state.torques[i + 7]    = right_motors[i].get_torque();
+        {
+            std::lock_guard<std::mutex> lock(hw_mutex_left_);
+            hw_left_->refresh_all();
+            hw_left_->recv_all(IO_RECV_TIMEOUT_US_);
+
+            const auto left_motors  = hw_left_->get_arm().get_motors();
+            const auto left_gripper = hw_left_->get_gripper().get_motors()[0];
+            for (int i = 0; i < 7; ++i) {
+                state.positions[i]  = left_motors[i].get_position();
+                state.velocities[i] = left_motors[i].get_velocity();
+                state.torques[i]    = left_motors[i].get_torque();
+            }
+            state.gripper_left_position = left_gripper.get_position();
+            state.gripper_left_torque   = left_gripper.get_torque();
         }
-        state.gripper_left_position  = left_gripper.get_position();
-        state.gripper_left_torque    = left_gripper.get_torque();
-        state.gripper_right_position = right_gripper.get_position();
-        state.gripper_right_torque   = right_gripper.get_torque();
+        {
+            std::lock_guard<std::mutex> lock(hw_mutex_right_);
+            hw_right_->refresh_all();
+            hw_right_->recv_all(IO_RECV_TIMEOUT_US_);
+
+            const auto right_motors  = hw_right_->get_arm().get_motors();
+            const auto right_gripper = hw_right_->get_gripper().get_motors()[0];
+            for (int i = 0; i < 7; ++i) {
+                state.positions[i + 7]  = right_motors[i].get_position();
+                state.velocities[i + 7] = right_motors[i].get_velocity();
+                state.torques[i + 7]    = right_motors[i].get_torque();
+            }
+            state.gripper_right_position = right_gripper.get_position();
+            state.gripper_right_torque   = right_gripper.get_torque();
+        }
 
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
@@ -209,8 +257,10 @@ void DualOpenArmController::io_loop() {
             dynamics_right_->GetGravity(q_right.data(), grav_right.data());
             for (auto& t : grav_left)  t *= GRAV_TAU_SCALE_;
             for (auto& t : grav_right) t *= GRAV_TAU_SCALE_;
-            apply_mit(*hw_left_,  q_left,  {}, GRAV_KD_, grav_left,  gravity_comp_gripper_left_.load());
-            apply_mit(*hw_right_, q_right, {}, GRAV_KD_, grav_right, gravity_comp_gripper_right_.load());
+            apply_mit(*hw_left_,  hw_mutex_left_,  q_left,  {}, GRAV_KD_, grav_left,
+                     gravity_comp_gripper_left_.load());
+            apply_mit(*hw_right_, hw_mutex_right_, q_right, {}, GRAV_KD_, grav_right,
+                     gravity_comp_gripper_right_.load());
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -219,7 +269,7 @@ void DualOpenArmController::io_loop() {
 
 // ── MIT command ───────────────────────────────────────────────────────────────
 
-void DualOpenArmController::apply_mit(can::socket::OpenArm& hw,
+void DualOpenArmController::apply_mit(can::socket::OpenArm& hw, std::mutex& hw_mutex,
                                       const std::array<double, 7>& q_target,
                                       const std::array<double, 7>& kp,
                                       const std::array<double, 7>& kd,
@@ -229,7 +279,31 @@ void DualOpenArmController::apply_mit(can::socket::OpenArm& hw,
     for (int i = 0; i < 7; ++i) {
         params[i] = {kp[i], kd[i], q_target[i], 0.0, tau_ff[i]};
     }
+    std::lock_guard<std::mutex> lock(hw_mutex);
     hw.get_arm().mit_control_all(params);
+    hw.get_gripper().posforce_control_one(
+        0, damiao_motor::PosForceParam{gripper_pos, GRIPPER_MAX_SPEED_, GRIPPER_TORQUE_PU_});
+}
+
+// ── PID command ───────────────────────────────────────────────────────────────
+
+void DualOpenArmController::apply_pid(can::socket::OpenArm& hw, std::mutex& hw_mutex,
+                                      Dynamics& dynamics,
+                                      const std::array<double, 7>& q_target,
+                                      double gain_scale, double gripper_pos) {
+    // Gravity feedforward from the same Dynamics model used by
+    // enable_gravity_compensation() — not supplied by the caller.
+    std::array<double, 7> gravity = {};
+    dynamics.GetGravity(q_target.data(), gravity.data());
+    for (auto& t : gravity) t *= GRAV_TAU_SCALE_;
+
+    std::vector<damiao_motor::PIDParam> params(7);
+    for (int i = 0; i < 7; ++i) {
+        params[i] = {KPS_[i] * gain_scale, KDS_[i] * gain_scale, KIS_[i],
+                    q_target[i], 0.0, gravity[i]};
+    }
+    std::lock_guard<std::mutex> lock(hw_mutex);
+    hw.get_arm().pid_control_all(params);
     hw.get_gripper().posforce_control_one(
         0, damiao_motor::PosForceParam{gripper_pos, GRIPPER_MAX_SPEED_, GRIPPER_TORQUE_PU_});
 }

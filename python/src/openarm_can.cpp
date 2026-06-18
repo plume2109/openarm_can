@@ -41,13 +41,14 @@ NB_MODULE(openarm_can, m) {
         .def(nb::init<const std::string&, const std::string&,
                       const std::string&, const std::string&,
                       std::array<double, 7>, std::array<double, 7>, std::array<double, 7>,
-                      double, double, double>(),
+                      std::array<double, 7>, double, double, double>(),
              nb::arg("can_interface"),
              nb::arg("urdf_path"),
              nb::arg("root_link"),
              nb::arg("tip_link"),
              nb::arg("kp")               = std::array<double, 7>{300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0},
              nb::arg("kd")               = std::array<double, 7>{2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8},
+             nb::arg("ki")               = std::array<double, 7>{0.2,   0.2,   0.2,   0.2,   0.2,  0.2,  0.2},
              nb::arg("grav_kd")          = std::array<double, 7>{0.1,   0.1,   0.1,   0.1,   0.1,  0.1,  0.1},
              nb::arg("grav_tau_scale")   = 1.0,
              nb::arg("gripper_max_speed") = 10.0,
@@ -62,6 +63,14 @@ NB_MODULE(openarm_can, m) {
              &OpenArmController::send_joint_action,
              nb::arg("positions"),
              nb::arg("gripper_position") = 0.0)
+        // Write (PID: MIT + host-side integral + gravity feedforward,
+        // ki set at construction)
+        .def("send_joint_action_pid",
+             &OpenArmController::send_joint_action_pid,
+             nb::arg("positions"),
+             nb::arg("gain_scale") = 1.0,
+             nb::arg("gripper_position") = 0.0)
+        .def("reset_integral", &OpenArmController::reset_integral)
         // Gravity compensation mode
         .def("enable_gravity_compensation",
              &OpenArmController::enable_gravity_compensation,
@@ -85,7 +94,7 @@ NB_MODULE(openarm_can, m) {
         .def(nb::init<const std::string&, const std::string&,
                       const std::string&, const std::string&, const std::string&,
                       std::array<double, 7>, std::array<double, 7>, std::array<double, 7>,
-                      double, double, double>(),
+                      std::array<double, 7>, double, double, double>(),
              nb::arg("left_can"),
              nb::arg("right_can"),
              nb::arg("urdf_path"),
@@ -93,6 +102,7 @@ NB_MODULE(openarm_can, m) {
              nb::arg("tip_link"),
              nb::arg("kp")                = std::array<double, 7>{300.0, 300.0, 150.0, 150.0, 40.0, 40.0, 30.0},
              nb::arg("kd")                = std::array<double, 7>{2.5,   2.5,   2.5,   2.5,   0.8,  0.8,  0.8},
+             nb::arg("ki")                = std::array<double, 7>{0.2,   0.2,   0.2,   0.2,   0.2,  0.2,  0.2},
              nb::arg("grav_kd")           = std::array<double, 7>{0.1,   0.1,   0.1,   0.1,   0.1,  0.1,  0.1},
              nb::arg("grav_tau_scale")    = 1.0,
              nb::arg("gripper_max_speed") = 10.0,
@@ -108,6 +118,15 @@ NB_MODULE(openarm_can, m) {
              nb::arg("positions"),
              nb::arg("gripper_left_position")  = 0.0,
              nb::arg("gripper_right_position") = 0.0)
+        // Write (PID: MIT + host-side integral + gravity feedforward,
+        // ki set at construction)
+        .def("send_joint_action_pid",
+             &DualOpenArmController::send_joint_action_pid,
+             nb::arg("positions"),
+             nb::arg("gain_scale") = 1.0,
+             nb::arg("gripper_left_position")  = 0.0,
+             nb::arg("gripper_right_position") = 0.0)
+        .def("reset_integral", &DualOpenArmController::reset_integral)
         // Gravity compensation mode
         .def("enable_gravity_compensation",
              &DualOpenArmController::enable_gravity_compensation,

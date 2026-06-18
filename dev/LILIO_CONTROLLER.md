@@ -51,7 +51,10 @@ The Damiao motors support MIT (Model-based Impedance Torque) mode, which sends:
 
 - **Position control**: high kp/kd, τ_ff = 0
 - **Gravity compensation**: kp = 0, kd = light damping, τ_ff = gravity torques
-- PID mode (`pid_control_all`) used in V1 is dropped.
+- **PID**: same MIT command, plus a host-side integral term (`ki`, anti-windup
+  clamped) added to τ_ff. `OpenArmController`/`DualOpenArmController` expose
+  this as `send_joint_action_pid()` / `reset_integral()`, alongside the
+  default MIT-only `send_joint_action()`.
 
 ### Python bindings simplified
 

@@ -54,6 +54,14 @@ public:
     void mit_control_one(int i, const MITParam& mit_param);
     void mit_control_all(const std::vector<MITParam>& mit_params);
 
+    // PID control operations (MIT mode + host-side integral with anti-windup)
+    void pid_control_one(int i, const PIDParam& pid_param);
+    void pid_control_all(const std::vector<PIDParam>& pid_params);
+
+    // Reset integral state
+    void reset_integral_one(int i);
+    void reset_integral_all();
+
     // PosVel control operation
     void posvel_control_one(int i, const PosVelParam& posvel_param);
     void posvel_control_all(const std::vector<PosVelParam>& posvel_params);

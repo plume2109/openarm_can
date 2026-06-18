@@ -55,11 +55,12 @@ OpenArmController::OpenArmController(const std::string& can_interface,
                                      const std::string& tip_link,
                                      std::array<double, 7> kp,
                                      std::array<double, 7> kd,
+                                     std::array<double, 7> ki,
                                      std::array<double, 7> grav_kd,
                                      double               grav_tau_scale,
                                      double               gripper_max_speed,
                                      double               gripper_torque_pu)
-    : KPS_(kp), KDS_(kd), GRAV_KD_(grav_kd),
+    : KPS_(kp), KDS_(kd), KIS_(ki), GRAV_KD_(grav_kd),
       GRAV_TAU_SCALE_(grav_tau_scale),
       GRIPPER_MAX_SPEED_(gripper_max_speed),
       GRIPPER_TORQUE_PU_(gripper_torque_pu) {
@@ -102,13 +103,18 @@ OpenArmController::~OpenArmController() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 void OpenArmController::enable() {
+    std::lock_guard<std::mutex> hw_lock(hw_mutex_);
     hw_->set_callback_mode_all(damiao_motor::CallbackMode::STATE);
     hw_->enable_all();
     hw_->recv_all(2000);
 }
 
 void OpenArmController::disable() {
+    // Stop the io_thread_ from issuing further gravity-comp frames *before*
+    // taking the lock, so disable_all() below isn't immediately undone by a
+    // gravity-comp frame still queued behind this lock.
     gravity_comp_active_ = false;
+    std::lock_guard<std::mutex> hw_lock(hw_mutex_);
     hw_->disable_all();
     hw_->recv_all(1000);
 }
@@ -126,6 +132,17 @@ void OpenArmController::send_joint_action(const std::array<double, 7>& positions
                                           double gripper_position) {
     constexpr std::array<double, 7> zero = {};
     apply_mit(positions, KPS_, KDS_, zero, gripper_position);
+}
+
+void OpenArmController::send_joint_action_pid(const std::array<double, 7>& positions,
+                                              double gain_scale,
+                                              double gripper_position) {
+    apply_pid(positions, gain_scale, gripper_position);
+}
+
+void OpenArmController::reset_integral() {
+    std::lock_guard<std::mutex> hw_lock(hw_mutex_);
+    hw_->get_arm().reset_integral_all();
 }
 
 // ── Gravity compensation mode ─────────────────────────────────────────────────
@@ -146,20 +163,23 @@ void OpenArmController::io_loop() {
 
     while (running_) {
         // Read state from hardware
-        hw_->refresh_all();
-        hw_->recv_all(IO_RECV_TIMEOUT_US_);
-
-        const auto arm_motors    = hw_->get_arm().get_motors();
-        const auto gripper_motor = hw_->get_gripper().get_motors()[0];
-
         ArmState state;
-        for (int i = 0; i < 7; ++i) {
-            state.positions[i]  = arm_motors[i].get_position();
-            state.velocities[i] = arm_motors[i].get_velocity();
-            state.torques[i]    = arm_motors[i].get_torque();
+        {
+            std::lock_guard<std::mutex> hw_lock(hw_mutex_);
+            hw_->refresh_all();
+            hw_->recv_all(IO_RECV_TIMEOUT_US_);
+
+            const auto arm_motors    = hw_->get_arm().get_motors();
+            const auto gripper_motor = hw_->get_gripper().get_motors()[0];
+
+            for (int i = 0; i < 7; ++i) {
+                state.positions[i]  = arm_motors[i].get_position();
+                state.velocities[i] = arm_motors[i].get_velocity();
+                state.torques[i]    = arm_motors[i].get_torque();
+            }
+            state.gripper_position = gripper_motor.get_position();
+            state.gripper_torque   = gripper_motor.get_torque();
         }
-        state.gripper_position = gripper_motor.get_position();
-        state.gripper_torque   = gripper_motor.get_torque();
 
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
@@ -190,7 +210,31 @@ void OpenArmController::apply_mit(const std::array<double, 7>& q_target,
     for (int i = 0; i < 7; ++i) {
         params[i] = {kp[i], kd[i], q_target[i], 0.0, tau_ff[i]};
     }
+    std::lock_guard<std::mutex> hw_lock(hw_mutex_);
     hw_->get_arm().mit_control_all(params);
+    hw_->get_gripper().posforce_control_one(
+        0, damiao_motor::PosForceParam{gripper_pos, GRIPPER_MAX_SPEED_, GRIPPER_TORQUE_PU_});
+}
+
+// ── PID command ───────────────────────────────────────────────────────────────
+
+void OpenArmController::apply_pid(const std::array<double, 7>& q_target, double gain_scale,
+                                  double gripper_pos) {
+    // Gravity feedforward computed from the same Dynamics model
+    // enable_gravity_compensation() uses — not supplied by the caller, so
+    // there's only ever one gravity model in play (KDL), not a second,
+    // potentially-inconsistent one computed on the Python side.
+    std::array<double, 7> gravity = {};
+    dynamics_->GetGravity(q_target.data(), gravity.data());
+    for (auto& t : gravity) t *= GRAV_TAU_SCALE_;
+
+    std::vector<damiao_motor::PIDParam> params(7);
+    for (int i = 0; i < 7; ++i) {
+        params[i] = {KPS_[i] * gain_scale, KDS_[i] * gain_scale, KIS_[i],
+                    q_target[i], 0.0, gravity[i]};
+    }
+    std::lock_guard<std::mutex> hw_lock(hw_mutex_);
+    hw_->get_arm().pid_control_all(params);
     hw_->get_gripper().posforce_control_one(
         0, damiao_motor::PosForceParam{gripper_pos, GRIPPER_MAX_SPEED_, GRIPPER_TORQUE_PU_});
 }

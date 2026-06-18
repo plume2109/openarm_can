@@ -15,6 +15,8 @@
 #include <linux/can.h>
 #include <linux/can/raw.h>
 
+#include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <openarm/damiao_motor/dm_motor_device_collection.hpp>
 
@@ -127,6 +129,55 @@ void DMDeviceCollection::mit_control_one(int i, const MITParam& mit_param) {
 void DMDeviceCollection::mit_control_all(const std::vector<MITParam>& mit_params) {
     for (size_t i = 0; i < mit_params.size(); i++) {
         mit_control_one(i, mit_params[i]);
+    }
+}
+
+void DMDeviceCollection::pid_control_one(int i, const PIDParam& pid_param) {
+    auto dm_device = get_dm_devices()[i];
+    if (dm_device->get_control_mode() != ControlMode::MIT) {
+        std::cerr << "WARNING: PID control rejected; motor not in MIT mode." << std::endl;
+        return;
+    }
+    Motor& motor = dm_device->get_motor();
+
+    auto now = std::chrono::steady_clock::now();
+    if (!motor.integral_initialized_) {
+        motor.last_control_time_ = now;
+        motor.integral_initialized_ = true;
+    }
+
+    double dt = std::chrono::duration<double>(now - motor.last_control_time_).count();
+    motor.last_control_time_ = now;
+
+    double error = pid_param.q - motor.get_position();
+    motor.error_integral_ += error * dt;
+
+    // Anti-windup: clamp integral so that ki * integral stays within [-tMax, tMax]
+    LimitParam limits = Motor::get_limit_param(motor.get_motor_type());
+    double integral_limit = limits.tMax / pid_param.ki;
+    motor.error_integral_ = std::clamp(motor.error_integral_, -integral_limit, integral_limit);
+
+    MITParam mit_param{pid_param.kp, pid_param.kd, pid_param.q, pid_param.dq,
+                       pid_param.tau + pid_param.ki * motor.error_integral_};
+    CANPacket mit_cmd = CanPacketEncoder::create_mit_control_command(motor, mit_param);
+    send_command_to_device(dm_device, mit_cmd);
+}
+
+void DMDeviceCollection::pid_control_all(const std::vector<PIDParam>& pid_params) {
+    for (size_t i = 0; i < pid_params.size(); i++) {
+        pid_control_one(static_cast<int>(i), pid_params[i]);
+    }
+}
+
+void DMDeviceCollection::reset_integral_one(int i) {
+    Motor& motor = get_dm_devices()[i]->get_motor();
+    motor.error_integral_ = 0.0;
+    motor.integral_initialized_ = false;
+}
+
+void DMDeviceCollection::reset_integral_all() {
+    for (size_t i = 0; i < get_dm_devices().size(); i++) {
+        reset_integral_one(static_cast<int>(i));
     }
 }
 

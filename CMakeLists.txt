@@ -29,8 +29,11 @@ include(CTest)
 include(GNUInstallDirs)
 
 # ── Controller dependencies (KDL, URDF, Eigen) ───────────────────────────────
+# kdl_parser is not used as an external dependency: openarm_can vendors the
+# single function it needs (treeFromUrdfModel) in
+# src/openarm/controller/kdl_parser_compat.cpp to avoid requiring ROS build
+# tooling (ament_cmake, rcutils).
 find_package(orocos_kdl REQUIRED)
-find_package(kdl_parser REQUIRED)
 find_package(urdfdom REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
@@ -47,6 +50,7 @@ add_library(
   src/openarm/damiao_motor/dm_motor_device.cpp
   src/openarm/damiao_motor/dm_motor_device_collection.cpp
   src/openarm/controller/dynamics.cpp
+  src/openarm/controller/kdl_parser_compat.cpp
   src/openarm/controller/openarm_controller.cpp
   src/openarm/controller/dual_openarm_controller.cpp)
 set_target_properties(
@@ -76,6 +80,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.23)
            include/openarm/damiao_motor/dm_motor_device.hpp
            include/openarm/damiao_motor/dm_motor_device_collection.hpp
            include/openarm/controller/dynamics.hpp
+           include/openarm/controller/kdl_parser_compat.hpp
            include/openarm/controller/openarm_controller.hpp
            include/openarm/controller/dual_openarm_controller.hpp)
   install(
@@ -90,10 +95,10 @@ else()
   install(DIRECTORY include/openarm TYPE INCLUDE)
 endif()
 
+target_include_directories(openarm_can PUBLIC ${urdfdom_INCLUDE_DIRS})
 target_link_libraries(
   openarm_can
   PUBLIC orocos-kdl
-         kdl_parser
          urdfdom_model
          Eigen3::Eigen)
 

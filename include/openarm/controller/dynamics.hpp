@@ -25,8 +25,8 @@
 #include <kdl/chaindynparam.hpp>
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/chainjnttojacsolver.hpp>
-#include <kdl_parser/kdl_parser.hpp>
 #include <memory>
+#include <openarm/controller/kdl_parser_compat.hpp>
 #include <sstream>
 #include <vector>
 

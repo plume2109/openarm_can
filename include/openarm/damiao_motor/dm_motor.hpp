@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -25,6 +26,7 @@ class Motor {
     friend class DMCANDevice;  // Allow MotorDeviceCan to access protected
                                // members
     friend class DMControl;
+    friend class DMDeviceCollection;  // Allow host-side PID integral access
 
 public:
     // Constructor
@@ -70,6 +72,13 @@ protected:
     // Current state
     double state_q_, state_dq_, state_tau_;
     int state_tmos_, state_trotor_;
+
+    // PID integral state (host-side; the Damiao motors are MIT-only at the
+    // firmware level — pid_control_* layers an integral term in software
+    // on top of an MIT command, see DMDeviceCollection::pid_control_one)
+    double error_integral_ = 0.0;
+    bool integral_initialized_ = false;
+    std::chrono::steady_clock::time_point last_control_time_;
 
     // Parameter storage
     std::map<int, double> temp_param_dict_;
